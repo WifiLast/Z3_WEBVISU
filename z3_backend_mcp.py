@@ -6,6 +6,9 @@ import json
 import traceback
 import re
 
+from mcp.server.fastmcp import FastMCP
+
+
 
 # Import NLTK for natural language processing
 import nltk
@@ -16,6 +19,8 @@ from nltk.tree import Tree
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
+# Initialize the MCP server with a name (identifier for the server)
+mcp = FastMCP("check")
 
 # Download necessary NLTK data
 try:
@@ -1349,5 +1354,13 @@ def status():
         traceback.print_exc()
         return jsonify({"message": f"Error getting status: {str(e)}"}), 400
 
+@mcp.tool()
+def list_items(premises: list[str], conclusion: str) -> list[dict]:
+    """Get all pending tasks in the TODO list."""
+    converted = natural_language_to_logic(premises, conclusion)
+    return converted
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True)
+    mcp.run(transport="stdio")
+    #app.run(host='0.0.0.0', debug=True)
