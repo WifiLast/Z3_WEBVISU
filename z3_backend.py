@@ -1317,12 +1317,18 @@ def convert_natural_language_endpoint():
         data = request.json
         premises = data.get('premises', [])
         conclusion = data.get('conclusion', '')
+        use_lemmatization = data.get('useLemmatization', False)
         
         if not premises:
             return jsonify({"message": "No premises provided"}), 400
             
         if not conclusion:
             return jsonify({"message": "No conclusion provided"}), 400
+        
+        # Log the received data with lemmatization info
+        print(f"Received natural language with lemmatization={use_lemmatization}")
+        print(f"Premises: {premises}")
+        print(f"Conclusion: {conclusion}")
         
         converted = natural_language_to_logic(premises, conclusion)
         return jsonify(converted), 200
