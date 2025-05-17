@@ -5,6 +5,8 @@ from flask_cors import CORS
 import json
 import traceback
 import re
+# Import the relation extraction functions
+from spacy_relation_extract import extract_relations, is_linux, SPACY_AVAILABLE
 
 
 # Import NLTK for natural language processing
@@ -1354,6 +1356,51 @@ def status():
         print(f"Error getting status: {e}")
         traceback.print_exc()
         return jsonify({"message": f"Error getting status: {str(e)}"}), 400
+
+@app.route('/extract_relations', methods=['POST'])
+def extract_relations_endpoint():
+    """
+    Extract relations from a sentence using spaCy on Linux or NLTK as fallback.
+    """
+    try:
+        data = request.json
+        sentence = data.get('sentence', '')
+        
+        if not sentence:
+            return jsonify({"message": "No sentence provided"}), 400
+        
+        print(f"Extracting relations from: '{sentence}'")
+        
+        # Extract relations
+        relations = extract_relations(sentence)
+        
+        # Format the response
+        formatted_relations = []
+        for subj, rel, obj in relations:
+            formatted_relations.append({
+                "subject": subj,
+                "relation": rel,
+                "object": obj
+            })
+        
+        # Include method information
+        method = "spaCy" if is_linux() and SPACY_AVAILABLE else "NLTK"
+        
+        # Print debug info
+        print(f"Method used: {method}")
+        print(f"Found {len(formatted_relations)} relations:")
+        for relation in formatted_relations:
+            print(f"  {relation['subject']} --[{relation['relation']}]--> {relation['object']}")
+        
+        return jsonify({
+            "method": method,
+            "relations": formatted_relations,
+            "sentence": sentence
+        }), 200
+    except Exception as e:
+        print(f"Error extracting relations: {e}")
+        traceback.print_exc()
+        return jsonify({"message": f"Error extracting relations: {str(e)}"}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True)
