@@ -215,54 +215,134 @@ def prove_logic(premises: List[str], conclusion: str) -> bool:
 
 
 @mcp.tool()
-def check_satisfiability(constraints: List[str]) -> dict:
+def check_satisfiability(constraints: List[str], variables: dict = None) -> dict:
     """
     Check if a set of logical constraints is satisfiable and return a model if it exists.
 
     This tool checks if there exists any assignment of values that satisfies all constraints.
     Unlike prove_logic which proves theorems, this finds solutions to constraint problems.
 
-    SYNTAX: Same as prove_logic premises, but focused on finding solutions rather than proofs.
+    SYNTAX:
+    1. Simplified Mode (Recommended):
+       Provide a list of mathematical string expressions.
+       Variables are automatically detected and assumed to be Ints unless specified in 'variables'.
+       
+       constraints = ["x + y > 59", "x > 10"]
+       variables = {"x": "Int", "y": "Int"} (Optional, defaults to Int)
 
-    EXAMPLE - Find values satisfying constraints:
-    ---------------------------------------------
-    constraints = [
-        "Object = DeclareSort('Object')",
-        "s = Solver()",
-        "x = Int('x')",
-        "y = Int('y')",
-        "s.add(x + y == 10)",
-        "s.add(x > 3)",
-        "s.add(y > 2)"
-    ]
+    2. Legacy Mode (Advanced):
+       Full Z3 Python script.
+       constraints = [
+           "s = Solver()",
+           "x = Int('x')", 
+           "s.add(x > 10)"
+       ]
 
     Returns:
         {
             "satisfiable": True/False,
-            "model": {"x": "4", "y": "6"} or None
+            "model": {"x": "4", "y": "6"} or None,
+            "error": "..." (if any)
         }
     """
+    import re
+    
     try:
         locals_dict = {}
         solver = None
 
-        # Execute all constraints
-        for constraint in constraints:
+        # Determine mode: Simplified vs Legacy
+        # logic: if 'variables' is provided OR constraints look like expressions (no "s.add"), utilize simplified mode
+        is_simplified_mode = False
+        if variables is not None:
+             is_simplified_mode = True
+        elif constraints and not any("s.add" in c for c in constraints) and not any("Solver()" in c for c in constraints):
+             is_simplified_mode = True
+
+        if is_simplified_mode:
+            # --- SIMPLIFIED MODE ---
             try:
-                exec(constraint, globals(), locals_dict)
-                if 's' in locals_dict:
-                    solver = locals_dict['s']
+                # 1. Initialize Solver
+                solver = Solver()
+                locals_dict['s'] = solver
+                
+                # 2. Identify Variables
+                # If variables dict is not provided, init as empty
+                if variables is None:
+                    variables = {}
+                
+                # Gather all tokens from constraints to find implicit variables
+                all_text = " ".join(constraints)
+                # Regex to find potential identifiers: starts with letter, contains alphanumeric/_
+                potential_vars = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', all_text))
+                
+                # Filter out Z3 keywords/functions and python builtins
+                # We can check if they are already in globals() (which has from z3 import *)
+                # or in a strict blocklist
+                reserved = set(globals().keys()) | {'True', 'False', 'None', 'and', 'or', 'not', 'if', 'else', 'in', 'is'}
+                
+                discovered_vars = [v for v in potential_vars if v not in reserved and not hasattr(sys.modules[__name__], v)]
+
+                # 3. Create Z3 Variables
+                # Prioritize explicit types in 'variables' dict, otherwise default to Int
+                for var_name in variables:
+                    var_type = variables[var_name]
+                    if var_type == 'Int':
+                        locals_dict[var_name] = Int(var_name)
+                    elif var_type == 'Real':
+                        locals_dict[var_name] = Real(var_name)
+                    elif var_type == 'Bool':
+                        locals_dict[var_name] = Bool(var_name)
+                    else:
+                        # Fallback for unknown types or if user passed something specific
+                        # defaulting to Int is safest if unknown string
+                        locals_dict[var_name] = Int(var_name)
+
+                for var_name in discovered_vars:
+                    if var_name not in locals_dict:
+                        # Default assumption: Int
+                        locals_dict[var_name] = Int(var_name)
+
+                # 4. Add Constraints
+                for constraint in constraints:
+                    # Eval string logic -> Z3 expression
+                    # We assume the constraint string evaluates to a Z3 Bool expression
+                    # e.g. "x + y > 59" -> (x + y > 59)
+                    
+                    # Handle common replacements if needed (e.g. valid python syntax)
+                    # But Z3 overloads operators so standard python syntax usually works.
+                    # Just need to be careful with implicit boolean conversion if mixed? 
+                    # Z3 'And', 'Or' are functions, python 'and', 'or' are kw. 
+                    # Users should likely use z3 syntax And(..), Or(..), separate constraints implies implicit And
+                    
+                    expr = eval(constraint, globals(), locals_dict)
+                    solver.add(expr)
+
             except Exception as e:
                 return {
                     "satisfiable": False,
-                    "error": f"Error in constraint '{constraint}': {str(e)}"
+                    "error": f"Error in Simplified Mode setup: {str(e)}"
                 }
 
-        if solver is None:
-            return {
-                "satisfiable": False,
-                "error": "No solver created. Include 's = Solver()' in constraints."
-            }
+        else:
+            # --- LEGACY MODE ---
+            # Execute all constraints as raw python script
+            for constraint in constraints:
+                try:
+                    exec(constraint, globals(), locals_dict)
+                    if 's' in locals_dict:
+                        solver = locals_dict['s']
+                except Exception as e:
+                    return {
+                        "satisfiable": False,
+                        "error": f"Error in constraint '{constraint}': {str(e)}"
+                    }
+
+            if solver is None:
+                return {
+                    "satisfiable": False,
+                    "error": "No solver created. Include 's = Solver()' in constraints."
+                }
 
         # Check satisfiability
         result = solver.check()
