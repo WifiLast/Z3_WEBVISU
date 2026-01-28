@@ -8,6 +8,7 @@ import string
 import re
 import traceback
 from typing import Optional
+from text_enrichment import enrich_text, DEFAULT_ENRICHMENT_RULES
 
 # Create an MCP server for Text Summarization
 mcp = FastMCP("NLTK Text Summarizer")
@@ -206,25 +207,32 @@ def summarize_text(
     text: str, 
     summary_length: int = 3, 
     correct_spelling: bool = True,
-    use_spacy: bool = True
+    use_spacy: bool = True,
+    enrich_keywords: bool = False,
+    custom_enrichment_rules: dict = None
 ) -> dict:
     """
-    Summarize text with spelling correction and preprocessing.
+    Summarize text with spelling correction, keyword enrichment, and preprocessing.
     
     This tool performs the following steps:
-    1. Spelling correction (optional)
-    2. Text preprocessing (tokenization, stopword removal, lemmatization)
-    3. Extractive summarization using sentence scoring
+    1. Keyword enrichment (optional) - expands keywords with detailed descriptions
+    2. Spelling correction (optional)
+    3. Text preprocessing (tokenization, stopword removal, lemmatization)
+    4. Extractive summarization using sentence scoring
     
     Args:
         text: Input text to summarize
         summary_length: Number of sentences in the summary (default: 3)
         correct_spelling: Whether to correct spelling errors (default: True)
         use_spacy: Whether to use spaCy for lemmatization (default: True)
+        enrich_keywords: Whether to enrich keywords with detailed descriptions (default: False)
+        custom_enrichment_rules: Custom enrichment rules dict (optional, uses defaults if None)
     
     Returns:
         dict: Contains:
             - original_text: Original input text
+            - enriched_text: Text after keyword enrichment (if enabled)
+            - enrichment_replacements: List of keyword replacements made
             - corrected_text: Text after spelling correction
             - spelling_corrections: List of spelling corrections made
             - summary: The generated summary
@@ -235,6 +243,8 @@ def summarize_text(
     try:
         result = {
             "original_text": text,
+            "enriched_text": text,
+            "enrichment_replacements": [],
             "corrected_text": text,
             "spelling_corrections": [],
             "summary": "",
@@ -243,17 +253,27 @@ def summarize_text(
             "error": None
         }
         
-        # Step 1: Spelling Correction
+        # Step 1: Keyword Enrichment
+        if enrich_keywords:
+            print("[NLTK Summarizer] Enriching keywords...")
+            enriched_text, enrichments = enrich_text(text, custom_enrichment_rules)
+            result["enriched_text"] = enriched_text
+            result["enrichment_replacements"] = enrichments
+            text_to_process = enriched_text
+        else:
+            text_to_process = text
+        
+        # Step 2: Spelling Correction
         if correct_spelling:
             print("[NLTK Summarizer] Correcting spelling...")
-            corrected_text, corrections = correct_spelling_errors(text)
+            corrected_text, corrections = correct_spelling_errors(text_to_process)
             result["corrected_text"] = corrected_text
             result["spelling_corrections"] = corrections
             text_to_process = corrected_text
         else:
-            text_to_process = text
+            result["corrected_text"] = text_to_process
         
-        # Step 2: Preprocessing
+        # Step 3: Preprocessing
         print("[NLTK Summarizer] Preprocessing text...")
         preprocessed = preprocess_text(text_to_process, use_spacy=use_spacy)
         result["preprocessing"] = {
@@ -262,7 +282,7 @@ def summarize_text(
             "num_unique_tokens": len(set(preprocessed["cleaned_tokens"]))
         }
         
-        # Step 3: Summarization
+        # Step 4: Summarization
         print("[NLTK Summarizer] Generating summary...")
         summary_result = summarize_text_extractive(
             text_to_process, 
@@ -285,11 +305,54 @@ def summarize_text(
         traceback.print_exc()
         return {
             "original_text": text,
+            "enriched_text": text,
+            "enrichment_replacements": [],
             "corrected_text": text,
             "spelling_corrections": [],
             "summary": "",
             "preprocessing": {},
             "summarization": {},
+            "error": error_msg
+        }
+
+
+@mcp.tool()
+def enrich_text_only(
+    text: str,
+    custom_enrichment_rules: dict = None
+) -> dict:
+    """
+    Enrich text by replacing keywords with detailed descriptions.
+    
+    Useful for preprocessing text before sending to LLMs.
+    
+    Args:
+        text: Input text to enrich
+        custom_enrichment_rules: Custom enrichment rules dict (optional)
+    
+    Returns:
+        dict: enriched_text, enrichment_replacements, num_replacements
+    """
+    try:
+        enriched_text, replacements = enrich_text(text, custom_enrichment_rules)
+        print(f"[NLTK Enrichment] Enriched text with {len(replacements)} replacements")
+        
+        return {
+            "original_text": text,
+            "enriched_text": enriched_text,
+            "enrichment_replacements": replacements,
+            "num_replacements": len(replacements),
+            "error": None
+        }
+    except Exception as e:
+        error_msg = f"Error enriching text: {str(e)}"
+        print(f"[NLTK Enrichment] {error_msg}")
+        traceback.print_exc()
+        return {
+            "original_text": text,
+            "enriched_text": text,
+            "enrichment_replacements": [],
+            "num_replacements": 0,
             "error": error_msg
         }
 
@@ -301,6 +364,7 @@ if __name__ == "__main__":
     print("NLTK Text Summarizer MCP Server")
     print("="*70)
     print("Features:")
+    print("  - Keyword enrichment for LLM preprocessing")
     print("  - Spelling correction with TextBlob")
     print("  - Text preprocessing with NLTK")
     print("  - Lemmatization with spaCy")
