@@ -3,10 +3,12 @@ from mcp.server.fastmcp import FastMCP
 from z3 import *
 import traceback
 from typing import List
+from z3_cache import Z3Cache
 
 import uvicorn
 # Create an MCP server for Z3 Logic Solving
 mcp = FastMCP("Z3 Logic Solver")
+cache = Z3Cache()
 
 
 @mcp.tool()
@@ -50,6 +52,12 @@ def prove_logic(premises: List[str], conclusion: str, declarations: dict = None,
         True if conclusion is proven, False otherwise
     """
     try:
+        # Check Cache
+        cached_result = cache.get_cache(premises, conclusion, declarations, aliases)
+        if cached_result is not None:
+            print(f"[Z3 MCP] CACHE HIT: {conclusion} -> {cached_result}")
+            return cached_result
+
         # Create a fresh context for this theorem
         context = {
             'solver': None,
@@ -72,7 +80,6 @@ def prove_logic(premises: List[str], conclusion: str, declarations: dict = None,
                 obj_sort = DeclareSort('Object')
                 locals_dict['Object'] = obj_sort
                 solver = Solver()
-                locals_dict['s'] = solver
                 context['solver'] = solver
 
                 if declarations is None: declarations = {}
@@ -220,9 +227,11 @@ def prove_logic(premises: List[str], conclusion: str, declarations: dict = None,
 
         if result == unsat:
             print(f"[Z3 MCP] PROVEN: {conclusion}")
+            cache.set_cache(premises, conclusion, declarations, aliases, True)
             return True
         elif result == sat:
             print(f"[Z3 MCP] NOT PROVEN: {conclusion}")
+            cache.set_cache(premises, conclusion, declarations, aliases, False)
             return False
         else:
             print(f"[Z3 MCP] UNKNOWN")
@@ -284,7 +293,6 @@ def check_satisfiability(constraints: List[str], variables: dict = None) -> dict
             try:
                 # 1. Initialize Solver
                 solver = Solver()
-                locals_dict['s'] = solver
                 
                 # 2. Identify Variables
                 # If variables dict is not provided, init as empty
