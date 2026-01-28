@@ -80,11 +80,56 @@ def main():
              None, 
              expected_sat=True)
 
-    # 5. Legacy Mode
+    # 5. Legacy Mode (check_satisfiability)
     run_test("Legacy Mode", 
              ["s = Solver()", "x = Int('x')", "s.add(x > 5)"], 
              None, 
              expected_sat=True)
+
+    # --- PROVE_LOGIC TESTS ---
+    from mcp_backend_z3_current import prove_logic
+    
+    print("\n--- Testing prove_logic ---")
+
+    def test_prove(name, premises, conclusion, declarations=None, aliases=None, expected=True):
+        print(f"Test: {name}")
+        try:
+             res = prove_logic(premises, conclusion, declarations, aliases)
+             if res == expected:
+                 print("PASS")
+             else:
+                 print(f"FAIL: Expected {expected}, got {res}")
+        except Exception as e:
+             print(f"FAIL exception: {e}")
+        print()
+
+    # 1. Simplified Inference
+    test_prove("Inference (Human/Mortal)",
+               ["ForAll([x], Implies(Human(x), Mortal(x)))", "Human(socrates)"],
+               "Mortal(socrates)",
+               expected=True)
+
+    # 2. Aliases
+    test_prove("Aliases (H/M)",
+               ["ForAll([x], Implies(H(x), M(x)))", "H(s)"],
+               "M(s)",
+               aliases={"H": "Human", "M": "Mortal", "s": "socrates"},
+               expected=True)
+
+    # 3. Explicit Declarations
+    test_prove("Explicit Declarations",
+               ["P(a)"],
+               "P(a)",
+               declarations={"P": "Predicate", "a": "Object"},
+               expected=True)
+    
+    # 4. Mixed (Aliases + Inference)
+    # H is alias, M is inferred
+    test_prove("Mixed Alias/Inferred",
+               ["ForAll([x], Implies(H(x), M(x)))", "H(s)"],
+               "M(s)",
+               aliases={"H": "Human"},
+               expected=True)
 
 if __name__ == "__main__":
     main()

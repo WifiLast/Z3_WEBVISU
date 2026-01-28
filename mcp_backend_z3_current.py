@@ -10,134 +10,41 @@ mcp = FastMCP("Z3 Logic Solver")
 
 
 @mcp.tool()
-def prove_logic(premises: List[str], conclusion: str) -> bool:
+def prove_logic(premises: List[str], conclusion: str, declarations: dict = None, aliases: dict = None) -> bool:
     """
     Prove whether a conclusion logically follows from given premises using Z3 solver.
 
     Returns True if the conclusion is proven, False otherwise.
 
-    SYNTAX INSTRUCTIONS FOR THE LLM:
-    ================================
+    SYNTAX INSTRUCTIONS:
+    ====================
+    
+    1. Simplified Mode (Recommended):
+       - Pass mathematical/logical expressions as strings.
+       - 'Object' sort and 'Solver' are automatically created.
+       - Symbols are inferred:
+         - "Name(...)" -> Predicate (Function returning Bool)
+         - "name"      -> Constant (Object)
+       
+       Aliases:
+       - Use 'aliases' dict to map short names to full names.
+         e.g. aliases={"H": "Human", "s": "socrates"}
+         Input: "H(s)" -> Interpreted as "Human(socrates)" in Z3, but you write "H(s)".
+       
+       declarations:
+       - Use 'declarations' to explicitly set types if inference is wrong.
+         e.g. declarations={"X": "Object", "P": "Predicate"}
 
-    This tool uses Z3 theorem prover to verify logical conclusions. You MUST follow this syntax exactly.
+       Example:
+       prove_logic(
+           premises=["H(s) -> M(s)", "H(s)"],
+           conclusion="M(s)",
+           aliases={"H": "Human", "M": "Mortal", "s": "socrates"}
+       )
 
-    IMPORTANT RULES:
-    ----------------
-    1. Predicates (properties like "Human", "Mortal") are FUNCTIONS that return BoolSort()
-    2. Entities (individuals like "socrates", "x") are CONSTANTS of type Object
-    3. Predicates are applied TO entities: Human(socrates) means "socrates is human"
-    4. NEVER declare the same name as both a Function and a Const
-    5. Use capitalized names for predicates (Human, Mortal, Bird)
-    6. Use lowercase names for entities (socrates, bird1, x)
-    7. Always declare 'Object' sort first
-    8. Always declare variable 'x' for universal/existential quantification
-    9. Each premise is a separate string in the premises list
-
-    STANDARD DECLARATIONS (always include these first):
-    ---------------------------------------------------
-    "Object = DeclareSort('Object')"
-    "s = Solver()"
-
-    DECLARING PREDICATES (properties/classes):
-    ------------------------------------------
-    "Human = Function('Human', Object, BoolSort())"
-    "Mortal = Function('Mortal', Object, BoolSort())"
-    "Bird = Function('Bird', Object, BoolSort())"
-    "CanFly = Function('CanFly', Object, BoolSort())"
-
-    DECLARING ENTITIES (individuals):
-    ---------------------------------
-    "socrates = Const('socrates', Object)"
-    "tweety = Const('tweety', Object)"
-    "x = Const('x', Object)"  # for variables in quantifiers
-
-    DECLARING BINARY RELATIONS:
-    ---------------------------
-    "ParentOf = Function('ParentOf', Object, Object, BoolSort())"
-    "GreaterThan = Function('GreaterThan', Object, Object, BoolSort())"
-
-    ADDING CONSTRAINTS:
-    ------------------
-    Universal statements: "All X are Y"
-    "s.add(ForAll([x], Implies(Human(x), Mortal(x))))"
-
-    Existential statements: "Some X are Y"
-    "s.add(Exists([x], And(Bird(x), CanFly(x))))"
-
-    Specific facts: "Socrates is human"
-    "s.add(Human(socrates))"
-
-    Binary relations: "Alice is parent of Bob"
-    "s.add(ParentOf(alice, bob))"
-
-    Negations: "X is not Y"
-    "s.add(Not(CanFly(penguin)))"
-
-    CONCLUSION FORMAT:
-    -----------------
-    The conclusion should be a Z3 expression (NOT a premise with s.add):
-    "Mortal(socrates)"
-    "CanFly(tweety)"
-    "ParentOf(alice, charlie)"
-
-    COMPLETE EXAMPLE - Socrates is Mortal:
-    --------------------------------------
-    premises = [
-        "Object = DeclareSort('Object')",
-        "s = Solver()",
-        "Human = Function('Human', Object, BoolSort())",
-        "Mortal = Function('Mortal', Object, BoolSort())",
-        "socrates = Const('socrates', Object)",
-        "x = Const('x', Object)",
-        "s.add(ForAll([x], Implies(Human(x), Mortal(x))))",
-        "s.add(Human(socrates))"
-    ]
-    conclusion = "Mortal(socrates)"
-
-    EXAMPLE - Transitivity:
-    -----------------------
-    premises = [
-        "Object = DeclareSort('Object')",
-        "s = Solver()",
-        "GreaterThan = Function('GreaterThan', Object, Object, BoolSort())",
-        "a = Const('a', Object)",
-        "b = Const('b', Object)",
-        "c = Const('c', Object)",
-        "x = Const('x', Object)",
-        "y = Const('y', Object)",
-        "z = Const('z', Object)",
-        "s.add(GreaterThan(a, b))",
-        "s.add(GreaterThan(b, c))",
-        "s.add(ForAll([x, y, z], Implies(And(GreaterThan(x, y), GreaterThan(y, z)), GreaterThan(x, z))))"
-    ]
-    conclusion = "GreaterThan(a, c)"
-
-    EXAMPLE - Bird that doesn't fly:
-    ---------------------------------
-    premises = [
-        "Object = DeclareSort('Object')",
-        "s = Solver()",
-        "Bird = Function('Bird', Object, BoolSort())",
-        "CanFly = Function('CanFly', Object, BoolSort())",
-        "penguin = Const('penguin', Object)",
-        "x = Const('x', Object)",
-        "s.add(ForAll([x], Implies(Bird(x), CanFly(x))))",
-        "s.add(Bird(penguin))",
-        "s.add(Not(CanFly(penguin)))"
-    ]
-    conclusion = "False"  # This will return False (contradiction found)
-
-    USAGE GUIDELINES FOR LLM:
-    -------------------------
-    1. When formulating a solution, first express it as logical premises
-    2. Call this tool to verify if your conclusion follows from the premises
-    3. If the tool returns False, your logic is incorrect - abort and try another approach
-    4. If the tool returns True, your logic is sound - proceed with confidence
-    5. Use this for: planning verification, constraint checking, logical reasoning validation
-
-    Args:
-        premises: List of Z3 Python statements defining the logical context
-        conclusion: Z3 expression to be proven
+    2. Legacy Mode (Advanced):
+       - Full Z3 Python script strings including "s = Solver()", "Object = DeclareSort...", etc.
+       - Used if premises contain raw python code with "s.add(...)".
 
     Returns:
         True if conclusion is proven, False otherwise
@@ -147,65 +54,178 @@ def prove_logic(premises: List[str], conclusion: str) -> bool:
         context = {
             'solver': None,
             'variables': {},
-            'functions': {},
-            'sorts': {},
-            'constants': {}
         }
-
-        # Create a local scope for variables and initialize the solver
         locals_dict = {}
+        import re
 
-        # Execute all premises to build the logical context
-        for premise in premises:
+        # Determine mode
+        # If declarations/aliases provided OR proper logic syntax (no s.add), use Simplified Mode
+        is_simplified_mode = False
+        if declarations is not None or aliases is not None:
+             is_simplified_mode = True
+        elif premises and not any("s.add" in p for p in premises) and not any("Solver()" in p for p in premises):
+             is_simplified_mode = True
+
+        if is_simplified_mode:
             try:
-                exec(premise, globals(), locals_dict)
+                # 1. Setup Environment
+                obj_sort = DeclareSort('Object')
+                locals_dict['Object'] = obj_sort
+                solver = Solver()
+                locals_dict['s'] = solver
+                context['solver'] = solver
 
-                # Store the solver reference if it's created
-                if 's' in locals_dict and locals_dict['s'] is not None:
-                    context['solver'] = locals_dict['s']
+                if declarations is None: declarations = {}
+                if aliases is None: aliases = {}
 
+                # 2. Process Aliases & Declarations
+                # We need to map: "key" -> Z3 Object(name="value")
+                
+                # Helper to get z3 name: value if alias else key
+                # Helper to register in locals_dict
+                
+                def register_symbol(symbol_key, z3_name=None, type_hint=None):
+                    if symbol_key in locals_dict: return
+                    
+                    real_name = z3_name if z3_name else symbol_key
+                    
+                    # Decide type
+                    # type_hint values: "Predicate", "Function", "Const", "Object"
+                    # Default inference if no hint:
+                    # If it looks like it's used as Function -> Predicate
+                    # This is hard to know without parsing usage. 
+                    # We will rely on Declarations + Inference from text regex later.
+                    
+                    # For now, just register what we know from declarations
+                    
+                    # Standard creation logic
+                    if type_hint == "Predicate" or type_hint == "Function":
+                        # We don't know arity (number of args) easily without parsing.
+                        # Z3 Functions need domain signatures. 
+                        # Simplified assumption: Unary predicate "Function(name, Object, BoolSort())"
+                        # Or we utilize a flexible Python Function that returns a Z3 func? No z3 is strict.
+                        
+                        # LIMITATION: In simplified mode without explicit arity, we assume Unary Predicate (Object->Bool).
+                        # If user needs binary, they must use Legacy or we find a way to detect arity.
+                        # Detection: Regex search "Symbol(a, b)" -> Arity 2.
+                        
+                        # Let's do a quick scan of usage in premises/conclusion for this symbol
+                        all_text = " ".join(premises) + " " + conclusion
+                        # count commas in usage: Symbol(..., ..., ...)
+                        # Regex: Symbol \s* \( ([^)]*) \)
+                        matcher = re.search(rf'\b{symbol_key}\s*\((.*?)\)', all_text)
+                        arity = 1
+                        if matcher:
+                            args_str = matcher.group(1)
+                            if args_str.strip():
+                                arity = args_str.count(',') + 1
+                            else:
+                                arity = 0 # Symbol() ?
+                        
+                        domain = [obj_sort] * arity
+                        locals_dict[symbol_key] = Function(real_name, *domain, BoolSort())
+                        
+                    elif type_hint == "Const" or type_hint == "Object":
+                         locals_dict[symbol_key] = Const(real_name, obj_sort)
+                         
+                    else:
+                        # Fallback / Inference
+                        # If starts with Lowercase -> Const
+                        # If starts with Uppercase -> Predicate (Unary)
+                        # This is a heuristic.
+                        if symbol_key[0].islower():
+                            locals_dict[symbol_key] = Const(real_name, obj_sort)
+                        else:
+                            # Check arity again for inference
+                            all_text = " ".join(premises) + " " + conclusion
+                            matcher = re.search(rf'\b{symbol_key}\s*\((.*?)\)', all_text)
+                            arity = 1
+                            if matcher:
+                                args_str = matcher.group(1)
+                                if args_str.strip():
+                                    arity = args_str.count(',') + 1
+                            
+                            domain = [obj_sort] * arity
+                            locals_dict[symbol_key] = Function(real_name, *domain, BoolSort())
+
+                # Register Aliases
+                for alias_key, full_name in aliases.items():
+                    # Check declarations for type hint
+                    hint = declarations.get(alias_key)
+                    register_symbol(alias_key, z3_name=full_name, type_hint=hint)
+
+                # Register Explicit Declarations (non-aliases)
+                for decl_key, decl_type in declarations.items():
+                    if decl_key not in aliases:
+                        register_symbol(decl_key, z3_name=decl_key, type_hint=decl_type)
+
+                # 3. Discovery of remaining symbols
+                all_text = " ".join(premises) + " " + conclusion
+                # Tokens: [a-zA-Z_]\w*
+                potential_tokens = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', all_text))
+                
+                # Blocklist
+                reserved = set(globals().keys()) | {'True', 'False', 'None', 'And', 'Or', 'Not', 'Implies', 'ForAll', 'Exists', 'Object', 'BoolSort'}
+                
+                for token in potential_tokens:
+                    if token not in locals_dict and token not in reserved and not hasattr(sys.modules[__name__], token):
+                        register_symbol(token) # Will infer type/arity
+
+                # 4. Add Constraints
+                for premise in premises:
+                    # If premise is just a boolean expression string, we add it.
+                    # We assume NO "s.add" logic here.
+                    expr = eval(premise, globals(), locals_dict)
+                    solver.add(expr)
+                    
             except Exception as e:
-                print(f"[Z3 MCP] Error executing premise '{premise}': {e}")
+                print(f"[Z3 MCP] Error in Simplified Mode: {e}")
                 traceback.print_exc()
                 return False
 
+        else:
+            # --- LEGACY MODE ---
+            # Execute all premises to build the logical context
+            for premise in premises:
+                try:
+                    exec(premise, globals(), locals_dict)
+                    if 's' in locals_dict and locals_dict['s'] is not None:
+                        context['solver'] = locals_dict['s']
+                except Exception as e:
+                    print(f"[Z3 MCP] Error executing premise '{premise}': {e}")
+                    return False
+        
         # Ensure we have a solver
         if context['solver'] is None:
-            print("[Z3 MCP] Error: No solver created. Make sure premises include 's = Solver()'")
+            print("[Z3 MCP] Error: No solver created.")
             return False
 
-        # Test the conclusion through refutation (proof by contradiction)
-        # If premises AND NOT(conclusion) is unsatisfiable, then conclusion is proven
+        # Test the conclusion
         try:
-            negated_conclusion = f"s.add(Not({conclusion}))"
-            exec(negated_conclusion, globals(), locals_dict)
+            # If simplified mode, conclusion is just string expr.
+            if is_simplified_mode:
+                 conc_expr = eval(conclusion, globals(), locals_dict)
+                 negated_conclusion_expr = Not(conc_expr)
+                 context['solver'].add(negated_conclusion_expr)
+            else:
+                negated_conclusion = f"s.add(Not({conclusion}))"
+                exec(negated_conclusion, globals(), locals_dict)
+                
         except Exception as e:
             print(f"[Z3 MCP] Error negating conclusion '{conclusion}': {e}")
-            traceback.print_exc()
             return False
 
-        # Check if the conclusion follows from the premises
+        # Check
         result = context['solver'].check()
 
         if result == unsat:
-            # Unsatisfiable with negated conclusion = conclusion is proven!
             print(f"[Z3 MCP] PROVEN: {conclusion}")
             return True
         elif result == sat:
-            # Satisfiable with negated conclusion = conclusion is NOT proven (counterexample exists)
-            model = context['solver'].model()
-            counterexample = []
-            for decl in model.decls():
-                name = decl.name()
-                value = model[decl]
-                counterexample.append(f"{name}={value}")
-
             print(f"[Z3 MCP] NOT PROVEN: {conclusion}")
-            print(f"[Z3 MCP] Counterexample: {', '.join(counterexample)}")
             return False
         else:
-            # Unknown result
-            print(f"[Z3 MCP] UNKNOWN: Could not determine if {conclusion} follows")
+            print(f"[Z3 MCP] UNKNOWN")
             return False
 
     except Exception as e:
